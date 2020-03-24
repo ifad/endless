@@ -304,13 +304,71 @@ func (srv *endlessServer) getListener(laddr string) (l net.Listener, err error) 
 			return
 		}
 	} else {
-		l, err = net.Listen("tcp", laddr)
+		l, err = srv.bindListener(laddr)
 		if err != nil {
 			err = fmt.Errorf("net.Listen error: %v", err)
 			return
 		}
 	}
 	return
+}
+
+/*
+ * Returns a TCP or Unix socket listener, according to the scheme prefix:
+ *
+ *   unix:/tmp/foo.sock
+ *   tcp::8438
+ *   :8438                 - tcp listener
+ */
+func (srv *endlessServer) bindListener(address string) (listener net.Listener, err error) {
+	if address == "" {
+		return nil, fmt.Errorf("No listen address specified")
+	}
+	if idx := strings.Index(address, ":"); idx >= 0 {
+		scheme := address[0:idx]
+		switch scheme {
+		case "tcp", "tcp4":
+			path := address[idx+1:]
+			if strings.Index(path, ":") == -1 {
+				path = ":" + path
+			}
+			listener, err = net.Listen(scheme, path)
+
+		case "tcp6": // general form: [host]:port
+			path := address[idx+1:]
+			if strings.Index(path, "[") != 0 { // port only
+				if strings.Index(path, ":") != 0 { // no leading :
+					path = ":" + path
+				}
+			}
+			listener, err = net.Listen(scheme, path)
+
+		case "unix", "unixpacket":
+			path := address[idx+1:]
+                        addr, err := net.ResolveUnixAddr("unix", path)
+                        if err != nil {
+                                return nil, err
+                        }
+
+                        unixListener, err := net.ListenUnix(scheme, addr)
+
+                        if err != nil {
+                                return nil, err
+                        }
+
+                        unixListener.SetUnlinkOnClose(false)
+
+                        return unixListener, nil
+
+		default: // assume TCP4 address
+			listener, err = net.Listen("tcp", address)
+		}
+
+	} else { // no scheme, port only specified
+		listener, err = net.Listen("tcp", ":"+address)
+	}
+
+	return listener, err
 }
 
 /*
@@ -496,18 +554,33 @@ type endlessListener struct {
 }
 
 func (el *endlessListener) Accept() (c net.Conn, err error) {
-	tc, err := el.Listener.(*net.TCPListener).AcceptTCP()
-	if err != nil {
-		return
-	}
+        switch el.Listener.(type) {
+        case *net.TCPListener:
+                tc, err := el.Listener.(*net.TCPListener).AcceptTCP()
+                if err != nil {
+                        return nil, err
+                }
 
-	tc.SetKeepAlive(true)                  // see http.tcpKeepAliveListener
-	tc.SetKeepAlivePeriod(3 * time.Minute) // see http.tcpKeepAliveListener
+                tc.SetKeepAlive(true)                  // see http.tcpKeepAliveListener
+                tc.SetKeepAlivePeriod(3 * time.Minute) // see http.tcpKeepAliveListener
 
-	c = endlessConn{
-		Conn:   tc,
-		server: el.server,
-	}
+                c = endlessConn{
+                        Conn:   tc,
+                        server: el.server,
+                }
+
+        case *net.UnixListener:
+                tc, err := el.Listener.(*net.UnixListener).AcceptUnix()
+                if err != nil {
+                        return nil, err
+                }
+
+                c = endlessConn{
+                        Conn:   tc,
+                        server: el.server,
+                }
+        }
+
 
 	el.server.wg.Add(1)
 	return
@@ -528,14 +601,22 @@ func (el *endlessListener) Close() error {
 	}
 
 	el.stopped = true
-	return el.Listener.Close()
+        return el.Listener.Close()
 }
 
 func (el *endlessListener) File() *os.File {
 	// returns a dup(2) - FD_CLOEXEC flag *not* set
-	tl := el.Listener.(*net.TCPListener)
-	fl, _ := tl.File()
-	return fl
+        switch el.Listener.(type) {
+        case *net.TCPListener:
+                fl, _ := el.Listener.(*net.TCPListener).File()
+                return fl
+
+        case *net.UnixListener:
+                fl, _ := el.Listener.(*net.UnixListener).File()
+                return fl
+        }
+
+        return nil
 }
 
 type endlessConn struct {
