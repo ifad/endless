@@ -79,7 +79,7 @@ type endlessServer struct {
 	isChild          bool
 	state            uint8
 	lock             *sync.RWMutex
-	BeforeBegin      func(add string)
+	BeforeBegin      func(addr string)
 }
 
 /*
@@ -194,7 +194,7 @@ func (srv *endlessServer) Serve() (err error) {
 	srv.setState(STATE_RUNNING)
 	err = srv.Server.Serve(srv.EndlessListener)
 	// Active termination to eliminate error messages
-	if srv.getState() != STATE_RUNNING{
+	if srv.getState() != STATE_RUNNING {
 		err = nil
 	}
 	log.Println(syscall.Getpid(), "Waiting for connections to finish...")
@@ -482,7 +482,8 @@ func (srv *endlessServer) fork() (err error) {
 	}
 
 	go func() {
-		// Avoid zombie processes, There is no wait subprocess state, which may lead to zombie process in subprocesses.
+		// Avoid zombie processes, There is no wait subprocess state,
+		// which may lead to zombie process in subprocesses.
 		cmd.Wait()
 	}()
 	return
