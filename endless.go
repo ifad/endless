@@ -15,7 +15,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
 	// "github.com/fvbock/uds-go/introspect"
 )
 
@@ -345,20 +344,20 @@ func (srv *endlessServer) bindListener(address string) (listener net.Listener, e
 
 		case "unix", "unixpacket":
 			path := address[idx+1:]
-                        addr, err := net.ResolveUnixAddr("unix", path)
-                        if err != nil {
-                                return nil, err
-                        }
+			addr, err := net.ResolveUnixAddr("unix", path)
+			if err != nil {
+				return nil, err
+			}
 
-                        unixListener, err := net.ListenUnix(scheme, addr)
+			unixListener, err := net.ListenUnix(scheme, addr)
 
-                        if err != nil {
-                                return nil, err
-                        }
+			if err != nil {
+				return nil, err
+			}
 
-                        unixListener.SetUnlinkOnClose(false)
+			unixListener.SetUnlinkOnClose(false)
 
-                        return unixListener, nil
+			return unixListener, nil
 
 		default: // assume TCP4 address
 			listener, err = net.Listen("tcp", address)
@@ -554,33 +553,32 @@ type endlessListener struct {
 }
 
 func (el *endlessListener) Accept() (c net.Conn, err error) {
-        switch el.Listener.(type) {
-        case *net.TCPListener:
-                tc, err := el.Listener.(*net.TCPListener).AcceptTCP()
-                if err != nil {
-                        return nil, err
-                }
+	switch el.Listener.(type) {
+	case *net.TCPListener:
+		tc, err := el.Listener.(*net.TCPListener).AcceptTCP()
+		if err != nil {
+			return nil, err
+		}
 
-                tc.SetKeepAlive(true)                  // see http.tcpKeepAliveListener
-                tc.SetKeepAlivePeriod(3 * time.Minute) // see http.tcpKeepAliveListener
+		tc.SetKeepAlive(true)                  // see http.tcpKeepAliveListener
+		tc.SetKeepAlivePeriod(3 * time.Minute) // see http.tcpKeepAliveListener
 
-                c = endlessConn{
-                        Conn:   tc,
-                        server: el.server,
-                }
+		c = endlessConn{
+			Conn:   tc,
+			server: el.server,
+		}
 
-        case *net.UnixListener:
-                tc, err := el.Listener.(*net.UnixListener).AcceptUnix()
-                if err != nil {
-                        return nil, err
-                }
+	case *net.UnixListener:
+		tc, err := el.Listener.(*net.UnixListener).AcceptUnix()
+		if err != nil {
+			return nil, err
+		}
 
-                c = endlessConn{
-                        Conn:   tc,
-                        server: el.server,
-                }
-        }
-
+		c = endlessConn{
+			Conn:   tc,
+			server: el.server,
+		}
+	}
 
 	el.server.wg.Add(1)
 	return
@@ -601,22 +599,22 @@ func (el *endlessListener) Close() error {
 	}
 
 	el.stopped = true
-        return el.Listener.Close()
+	return el.Listener.Close()
 }
 
 func (el *endlessListener) File() *os.File {
 	// returns a dup(2) - FD_CLOEXEC flag *not* set
-        switch el.Listener.(type) {
-        case *net.TCPListener:
-                fl, _ := el.Listener.(*net.TCPListener).File()
-                return fl
+	switch el.Listener.(type) {
+	case *net.TCPListener:
+		fl, _ := el.Listener.(*net.TCPListener).File()
+		return fl
 
-        case *net.UnixListener:
-                fl, _ := el.Listener.(*net.UnixListener).File()
-                return fl
-        }
+	case *net.UnixListener:
+		fl, _ := el.Listener.(*net.UnixListener).File()
+		return fl
+	}
 
-        return nil
+	return nil
 }
 
 type endlessConn struct {
