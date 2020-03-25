@@ -344,20 +344,8 @@ func (srv *endlessServer) bindListener(address string) (listener net.Listener, e
 
 		case "unix", "unixpacket":
 			path := address[idx+1:]
-			addr, err := net.ResolveUnixAddr("unix", path)
-			if err != nil {
-				return nil, err
-			}
 
-			unixListener, err := net.ListenUnix(scheme, addr)
-
-			if err != nil {
-				return nil, err
-			}
-
-			unixListener.SetUnlinkOnClose(false)
-
-			return unixListener, nil
+			return srv.bindUnixListener(scheme, path)
 
 		default: // assume TCP4 address
 			listener, err = net.Listen("tcp", address)
@@ -368,6 +356,33 @@ func (srv *endlessServer) bindListener(address string) (listener net.Listener, e
 	}
 
 	return listener, err
+}
+
+/* Tries to connect to the given UNIX socket, and removes it if a connection refused is returned.
+Then, binds it and returns it. */
+func (srv *endlessServer) bindUnixListener(scheme, path string) (listener net.Listener, err error) {
+	addr, err := net.ResolveUnixAddr("unix", path)
+	if err != nil {
+		return nil, err
+	}
+
+	/* Try to connect and abort if there is something listening on the other end */
+	conn, err := net.DialUnix(scheme, nil, addr)
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		log.Println(syscall.Getpid(), "Removing stale unix socket", path)
+		os.Remove(path)
+	} else if conn != nil {
+		conn.Close()
+	}
+
+	unixListener, err := net.ListenUnix(scheme, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	unixListener.SetUnlinkOnClose(false)
+
+	return unixListener, nil
 }
 
 /*
